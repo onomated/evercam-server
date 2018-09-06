@@ -1,29 +1,45 @@
 defmodule EvercamMedia.UserMailer do
+  use Bamboo.Phoenix, view: EvercamMediaWeb.EmailView
+  alias EvercamMedia.Mailer
   alias EvercamMedia.Snapshot.Storage
   alias EvercamMedia.Snapshot.CamClient
   import SnapmailLogs, only: [save_snapmail: 4]
+  import Bamboo.Email
 
   @config Application.get_env(:evercam_media, :mailgun)
   @from Application.get_env(:evercam_media, EvercamMediaWeb.Endpoint)[:email]
   @year Calendar.DateTime.now_utc |> Calendar.Strftime.strftime!("%Y")
 
   def cr_settings_changed(current_user, camera, cloud_recording, old_cloud_recording, user_request_ip) do
-    Mailgun.Client.send_email @config,
-      to: "marco@evercam.io",
-      subject: "Cloud Recording has been updated for \"#{camera.name}\"",
-      from: @from,
-      bcc: "vinnie@evercam.io",
-      html: Phoenix.View.render_to_string(EvercamMediaWeb.EmailView, "cr_settings_changed.html", camera: camera, current_user: current_user, cloud_recording: cloud_recording, old_cloud_recording: old_cloud_recording, user_request_ip: user_request_ip, year: @year),
-      text: Phoenix.View.render_to_string(EvercamMediaWeb.EmailView, "cr_settings_changed.txt", camera: camera, current_user: current_user, cloud_recording: cloud_recording, old_cloud_recording: old_cloud_recording, user_request_ip: user_request_ip)
+    new_email()
+    |> to("junaid@evercam.io")
+    |> from(@from)
+    |> subject("Cloud Recording has been updated for \"#{camera.name}\"")
+    |> bcc(["junaid@evercam.io"])
+    |> assign(:camera, camera)
+    |> assign(:current_user, current_user)
+    |> assign(:cloud_recording, cloud_recording)
+    |> assign(:old_cloud_recording, old_cloud_recording)
+    |> assign(:user_request_ip, user_request_ip)
+    |> assign(:year, @year)
+    |> put_text_layout({EvercamMediaWeb.EmailView, "cr_settings_changed.txt"})
+    |> put_html_layout({EvercamMediaWeb.EmailView, "cr_settings_changed.html"})
+    |> render(:text_and_html_email)
+    |> Mailer.deliver_now()
   end
 
   def confirm(user, code) do
-    Mailgun.Client.send_email @config,
-      to: user.email,
-      subject: "Evercam Confirmation",
-      from: @from,
-      html: Phoenix.View.render_to_string(EvercamMediaWeb.EmailView, "confirm.html", user: user, code: code, year: @year),
-      text: Phoenix.View.render_to_string(EvercamMediaWeb.EmailView, "confirm.txt", user: user, code: code)
+    new_email()
+    |> to(user.email)
+    |> from(@from)
+    |> subject("Evercam Confirmation")
+    |> assign(:user, user)
+    |> assign(:code, code)
+    |> assign(:year, @year)
+    |> put_text_layout({EvercamMediaWeb.EmailView, "confirm.txt"})
+    |> put_html_layout({EvercamMediaWeb.EmailView, "confirm.html"})
+    |> render(:text_and_html_email)
+    |> Mailer.deliver_now()
   end
 
   def camera_status(status, _user, camera) do
@@ -33,13 +49,20 @@ defmodule EvercamMedia.UserMailer do
     camera.alert_emails
     |> String.split(",", trim: true)
     |> Enum.each(fn(email) ->
-      Mailgun.Client.send_email @config,
-        to: email,
-        subject: "\"#{camera.name}\" camera is now #{status}",
-        from: @from,
-        attachments: get_attachments(thumbnail),
-        html: Phoenix.View.render_to_string(EvercamMediaWeb.EmailView, "#{status}.html", user: email, camera: camera, thumbnail_available: !!thumbnail, year: @year, current_time: current_time),
-        text: Phoenix.View.render_to_string(EvercamMediaWeb.EmailView, "#{status}.txt", user: email, camera: camera)
+      new_email()
+      |> to(email)
+      |> from(@from)
+      |> subject("\"#{camera.name}\" camera is now #{status}")
+      |> assign(:user, email)
+      |> assign(:camera, camera)
+      |> assign(:thumbnail_available, !!thumbnail)
+      |> assign(:current_time, current_time)
+      |> assign(:year, @year)
+      |> add_attachment(thumbnail)
+      |> put_text_layout({EvercamMediaWeb.EmailView, "#{status}.txt"})
+      |> put_html_layout({EvercamMediaWeb.EmailView, "#{status}.html"})
+      |> render(:text_and_html_email)
+      |> Mailer.deliver_now()
     end)
   end
 
@@ -55,40 +78,63 @@ defmodule EvercamMedia.UserMailer do
     camera.alert_emails
     |> String.split(",", trim: true)
     |> Enum.each(fn(email) ->
-      Mailgun.Client.send_email @config,
-        to: email,
-        subject: "#{subject} reminder: \"#{camera.name}\" camera has gone offline",
-        from: @from,
-        attachments: get_attachments(thumbnail),
-        html: Phoenix.View.render_to_string(EvercamMediaWeb.EmailView, "offline.html", user: email, camera: camera, thumbnail_available: !!thumbnail, year: @year, current_time: current_time),
-        text: Phoenix.View.render_to_string(EvercamMediaWeb.EmailView, "offline.txt", user: email, camera: camera)
+      new_email()
+      |> to(email)
+      |> from(@from)
+      |> subject("#{subject} reminder: \"#{camera.name}\" camera has gone offline")
+      |> assign(:user, email)
+      |> assign(:camera, camera)
+      |> assign(:thumbnail_available, !!thumbnail)
+      |> assign(:current_time, current_time)
+      |> assign(:year, @year)
+      |> add_attachment(thumbnail)
+      |> put_text_layout({EvercamMediaWeb.EmailView, "offline.txt"})
+      |> put_html_layout({EvercamMediaWeb.EmailView, "offline.html"})
+      |> render(:text_and_html_email)
+      |> Mailer.deliver_now()
     end)
   end
 
   def camera_shared_notification(user, camera, sharee_email, message) do
     thumbnail = get_thumbnail(camera)
-    Mailgun.Client.send_email @config,
-      to: sharee_email,
-      subject: "#{User.get_fullname(user)} has shared the camera #{camera.name} with you.",
-      from: @from,
-      "h:Reply-To": user.email,
-      bcc: user.email,
-      attachments: get_attachments(thumbnail),
-      html: Phoenix.View.render_to_string(EvercamMediaWeb.EmailView, "camera_shared_notification.html", user: user, camera: camera, message: message, thumbnail_available: !!thumbnail, year: @year),
-      text: Phoenix.View.render_to_string(EvercamMediaWeb.EmailView, "camera_shared_notification.txt", user: user, camera: camera, message: message)
+    new_email()
+    |> to(sharee_email)
+    |> from(@from)
+    |> bcc([user.email])
+    |> put_header("Reply-To", user.email)
+    |> subject("#{User.get_fullname(user)} has shared the camera #{camera.name} with you.")
+    |> assign(:user, user)
+    |> assign(:camera, camera)
+    |> assign(:thumbnail_available, !!thumbnail)
+    |> assign(:message, message)
+    |> assign(:year, @year)
+    |> add_attachment(thumbnail)
+    |> put_text_layout({EvercamMediaWeb.EmailView, "camera_shared_notification.txt"})
+    |> put_html_layout({EvercamMediaWeb.EmailView, "camera_shared_notification.html"})
+    |> render(:text_and_html_email)
+    |> Mailer.deliver_now()
   end
 
   def camera_share_request_notification(user, camera, email, message, key) do
     thumbnail = get_thumbnail(camera)
-    Mailgun.Client.send_email @config,
-      to: email,
-      subject: "#{User.get_fullname(user)} has shared the camera #{camera.name} with you.",
-      from: @from,
-      "h:Reply-To": user.email,
-      bcc: "#{user.email},marco@evercam.io,vinnie@evercam.io,erin@evercam.io",
-      attachments: get_attachments(thumbnail),
-      html: Phoenix.View.render_to_string(EvercamMediaWeb.EmailView, "sign_up_to_share_email.html", user: user, camera: camera, message: message, key: key, sharee: email, thumbnail_available: !!thumbnail, year: @year),
-      text: Phoenix.View.render_to_string(EvercamMediaWeb.EmailView, "sign_up_to_share_email.txt", user: user, camera: camera, message: message, key: key)
+    new_email()
+    |> to(email)
+    |> from(@from)
+    |> bcc([user.email, "marco@evercam.io", "vinnie@evercam.io", "erin@evercam.io"])
+    |> put_header("Reply-To", user.email)
+    |> subject("#{User.get_fullname(user)} has shared the camera #{camera.name} with you.")
+    |> assign(:user, user)
+    |> assign(:sharee, email)
+    |> assign(:key, key)
+    |> assign(:camera, camera)
+    |> assign(:thumbnail_available, !!thumbnail)
+    |> assign(:message, message)
+    |> assign(:year, @year)
+    |> add_attachment(thumbnail)
+    |> put_text_layout({EvercamMediaWeb.EmailView, "sign_up_to_share_email.txt"})
+    |> put_html_layout({EvercamMediaWeb.EmailView, "sign_up_to_share_email.html"})
+    |> render(:text_and_html_email)
+    |> Mailer.deliver_now()
   end
 
   def accepted_share_request_notification(user, camera, email) do
@@ -195,6 +241,11 @@ defmodule EvercamMedia.UserMailer do
       text: Phoenix.View.render_to_string(EvercamMediaWeb.EmailView, "snapshot_extractor_complete.txt", camera: snapshot_extractor.camera.name, count: snap_count, dropbox_url: url, year: @year)
   end
 
+  defp add_attachment(email, nil), do: email
+  defp add_attachment(email, thumbnail) do
+    email |> put_attachment(%Bamboo.Attachment{data: thumbnail, filename: "snapshot.jpg"})
+  end
+
   defp get_thumbnail(camera, status \\ "")
   defp get_thumbnail(camera, "online") do
     case camera |> construct_args |> fetch_snapshot do
@@ -222,7 +273,7 @@ defmodule EvercamMedia.UserMailer do
   end
 
   defp get_attachments(thumbnail) do
-    if thumbnail, do: [%{content: thumbnail, filename: "snapshot.jpg"}], else: nil
+    if thumbnail, do: %Bamboo.Attachment{data: thumbnail, filename: "snapshot.jpg"}, else: nil
   end
 
   defp get_multi_attachments(camera_images) do

@@ -87,6 +87,11 @@ config :evercam_media, :mailgun,
   key: System.get_env("MAILGUN_KEY"),
   mode: :prod
 
+config :evercam_media, EvercamMedia.Mailer,
+  adapter: Bamboo.MailgunAdapter,
+  api_key: System.get_env("MAILGUN_KEY"),
+  domain: System.get_env("MAILGUN_DOMAIN")
+
 config :evercam_media, EvercamMedia.Repo,
   adapter: Ecto.Adapters.Postgres,
   types: EvercamMedia.PostgresTypes,
