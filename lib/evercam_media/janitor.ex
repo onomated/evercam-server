@@ -1,4 +1,10 @@
 defmodule EvercamMedia.Janitor do
+  @moduledoc """
+    This is a Janitor for evercam_media, the purpose of this Module is to do things,
+    which were stopped due to hot upgrade. We encountered Porcelain app to be the one
+    to stop on hot upgrade. We are using code_change/3 callback module to handle this issue.
+  """
+
   use GenServer
   require Logger
   @vsn DateTime.to_unix(DateTime.utc_now())
